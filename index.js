@@ -1155,7 +1155,7 @@ if (interaction.customId === "activate_quran") {
       `أرجو منكم الدعاء فقط وتقبل الله منا ومنكم صالح الأعمال`
     );
   } catch (err) {
-    console.log("❌ لا يمكن إرسال رسالة خاصة للعضو.");
+    console.log("لا يمكن إرسال رسالة خاصة للعضو.");
   }
 
   return interaction.reply({
