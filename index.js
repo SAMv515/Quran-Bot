@@ -1354,74 +1354,89 @@ async function scheduleMakkahQuran() {
     // 📖 نظام إرسال صفحات الختمة
     // ============================
 
-    const match = Object.entries(times).find(([_, t]) => t === current);
-    if (!match) return;
+const match = Object.entries(times).find(([_, t]) => t === current);
+if (!match) return;
 
-    const [prayerKey] = match;
-    const prayerName = getArabicPrayerName(prayerKey);
+const [prayerKey] = match;
+const prayerName = getArabicPrayerName(prayerKey);
 
-    const ramadanDay = await getRamadanDayIfAny();
+const ramadanDay = await getRamadanDayIfAny();
 
-    for (const [guildId, settings] of guildSettings.entries()) {
-      const guild = client.guilds.cache.get(guildId);
-      if (!guild) continue;
+for (const [guildId, settings] of guildSettings.entries()) {
+  const guild = client.guilds.cache.get(guildId);
+  if (!guild) continue;
 
-      const channel = guild.channels.cache.get(settings.quranChannelId);
-      if (!channel) continue;
+  const channel = guild.channels.cache.get(settings.quranChannelId);
+  if (!channel) continue;
 
-      const pages = [
-        settings.currentPage,
-        settings.currentPage + 1,
-        settings.currentPage + 2,
-        settings.currentPage + 3
-      ];
+  const quranRole = guild.roles.cache.get(config.quranRoleId); // ← منشن الختمة
 
-      for (const p of pages) {
-        const buffer = await getPageWithWhiteBackground(p);
-        if (!buffer) continue;
+  const pages = [
+    settings.currentPage,
+    settings.currentPage + 1,
+    settings.currentPage + 2,
+    settings.currentPage + 3
+  ];
 
-        await safeSend(channel, {
-          content: `📖 صفحة رقم **${p}**`,
-          files: [{ attachment: buffer, name: `page_${p}.png` }]
-        });
-      }
+  // إرسال الصفحات الأربع
+  for (const p of pages) {
+    const buffer = await getPageWithWhiteBackground(p);
+    if (!buffer) continue;
 
-      const prayerEmbed = new EmbedBuilder()
-        .setTitle(`🕌 ${prayerName}`)
-        .setDescription(`📖 الصفحات:\n${pages[0]} – ${pages[3]}`)
-        .setColor(0x55A2FA)
-        .setTimestamp();
+    await safeSend(channel, {
+      content: quranRole ? `<@&${quranRole.id}>` : "", // ← المنشن هنا
+      files: [{ attachment: buffer, name: `quran.png` }]
+    });
+  }
 
-      await safeSend(channel, { embeds: [prayerEmbed] });
+  // الإمبيد الاحترافي
+  const prayerEmbed = new EmbedBuilder()
+    .setColor(0x55A2FA)
+    .setTitle("Khatma of the Quran 🕋 | 📖 ختمة القرآن الكريم")
+    .setDescription(
+      `🕌 **حان الآن موعد أذان ${prayerName}** حسب التوقيت المحلي لمكة المكرمة\n\n` +
+      `📖 **تمّ قراءة صفحات (${pages[0]} - ${pages[3]}) من القرآن الكريم** ضمن ختمة رمضان المبارك.\n\n` +
+      `اللهم بلغنا ليلة القدر 🌙`
+    )
+    .setImage("https://i.imgur.com/ou7luSN.png")
+    .setTimestamp();
 
-      settings.currentPage += 4;
-
-      if (settings.currentPage > 604) {
-        settings.currentPage = 1;
-      }
-
-      const pagesSentToday = ((settings.currentPage - 1) % 20);
-
-      if (pagesSentToday === 0 && ramadanDay !== null) {
-        const dayEmbed = new EmbedBuilder()
-          .setTitle(`📅 تقدم اليوم ${ramadanDay} من الختمة`)
-          .setDescription(
-            `📖 مجموع الصفحات: 20\n` +
-            `🕌 عدد الصلوات المكتملة: 5\n` +
-            `🌙 اليوم: ${ramadanDay}`
-          )
-          .setColor(0x55A2FA)
-          .setTimestamp();
-
-        await channel.send({ embeds: [dayEmbed] });
-      }
-    }
+  await safeSend(channel, {
+    content: quranRole ? `<@&${quranRole.id}>` : "", // ← المنشن مع الإمبيد
+    embeds: [prayerEmbed]
   });
+
+  // تحديث الصفحة
+  settings.currentPage += 4;
+  if (settings.currentPage > 604) {
+    settings.currentPage = 1;
+  }
+
+  // التقدم اليومي
+  const pagesSentToday = ((settings.currentPage - 1) % 20);
+
+  if (pagesSentToday === 0 && ramadanDay !== null) {
+    const dayEmbed = new EmbedBuilder()
+      .setTitle(`📅 تقدم اليوم ${ramadanDay} من الختمة`)
+      .setDescription(
+        `📖 مجموع الصفحات: 20\n` +
+        `🕌 عدد الصلوات المكتملة: 5\n` +
+        `🌙 اليوم: ${ramadanDay}`
+      )
+      .setColor(0x55A2FA)
+      .setTimestamp();
+
+    await channel.send({
+      content: quranRole ? `<@&${quranRole.id}>` : "",
+      embeds: [dayEmbed]
+    });
+  }
+}
+ });
 }
 
-
 ///=========================
-//9) تسجيل الدخول
+//9) login Token تشغيل البوت
 //=========================
 
 client.login(config.token);
