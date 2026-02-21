@@ -426,16 +426,16 @@ function buildCountdownEmbed(nextPrayer, remaining, guildIcon) {
   return new EmbedBuilder()
     .setColor(0x1E90FF)
     .setAuthor({
-      name: " العدّاد المباشر لتوقيت مكةالمكرمة| للصلاة القادمة",
+      name: " العدّاد المباشر لتوقيت مكةالمكرمة | للصلاة القادمة 🕋 ",
       iconURL: guildIcon
     })
     .setThumbnail(guildIcon)
-    .setImage("https://i.imgur.com/LgxI3Y9.png") // صورة مكة من مجلدك
+    .setImage("https://i.imgur.com/xafQAm4.png") // صورة مكة من مجلدك
     .setDescription(
       `**🕌 الصلاة القادمة: ${getArabicPrayerName(nextPrayer)} **\n\n` +
-      `**⏱️ المتبقي:**\n` +
-      `> **${remaining.hours} ساعة** و **${remaining.minutes} دقيقة**\n\n` +
-      `**📍 بتوقيت أم القرى – مكة المكرمة**`
+      `**⏱️المتبقي للأذان القادم :**\n\n` +
+      ` ⌛ **عداد الوقت : ** ${remaining.hours} ساعة و ${remaining.minutes} دقيقة\n\n` +
+      `** بتوقيت أم القرى –  منطقة مكة المكرمة 🕋 💠**`
     )
     .setFooter({
       text: "Quran Bot | تنبيهات أذان مكة 🕋 ",
@@ -443,7 +443,6 @@ function buildCountdownEmbed(nextPrayer, remaining, guildIcon) {
     })
     .setTimestamp();
 }
-
 
 // متغير لتخزين رسالة العدّاد الحي
 let liveCountdownMessage = null;
@@ -826,6 +825,11 @@ const row = new ActionRowBuilder().addComponents(
     // -------------------------
     // /catchup-pages
     // -------------------------
+
+// =========================
+// /catchup-pages (نسخة مطوّرة)
+// =========================
+
 if (interaction.commandName === "catchup-pages") {
   if (!hasPermission(interaction)) {
     return interaction.reply({ content: "هذا الأمر للمالك أو الأدمن فقط.", flags: 64 });
@@ -848,6 +852,7 @@ if (interaction.commandName === "catchup-pages") {
     return interaction.editReply("اليوم ليس من رمضان.");
   }
 
+  // الصفحات المطلوبة حتى اليوم
   const requiredPages = ramadanDay * 20;
   const sentPages = settings.currentPage - 1;
   let pagesToSend = requiredPages - sentPages;
@@ -856,41 +861,68 @@ if (interaction.commandName === "catchup-pages") {
     return interaction.editReply("لا يوجد صفحات ناقصة للتعويض.");
   }
 
-  const pages = [];
-  for (let i = 0; i < pagesToSend; i++) {
-    pages.push(settings.currentPage + i);
-  }
-
-  for (const p of pages) {
-    const buffer = await getPageWithWhiteBackground(p);
-    if (!buffer) continue;
-
-    await channel.send({
-      content: `📖 صفحة رقم **${p}**`,
-      files: [{ attachment: buffer, name: `page_${p}.png` }]
-    });
-  }
+  // جلب مواقيت مكة لمعرفة الصلاة القادمة
+  const times = await getMakkahPrayerTimes();
+  const now = new Date();
+  const h = now.getHours().toString().padStart(2, "0");
+  const m = now.getMinutes().toString().padStart(2, "0");
+  const current = `${h}:${m}`;
+  const nextPrayer = getNextPrayer(times, current);
 
   const role = interaction.guild.roles.cache.get(config.quranRoleId);
 
-  const embed = new EmbedBuilder()
-    .setTitle("📖 تعويض صفحات الختمة")
-    .setDescription(
-      `تم إرسال الصفحات التالية:\n\n` +
-      pages.map(p => `• الصفحة **${p}**`).join("\n") +
-      `\n\nتم التعويض بنجاح 🌙`
-    )
-    .setColor(0x55A2FA);
+  // تقسيم الصفحات إلى مجموعات من 4
+  const allPages = [];
+  for (let i = 0; i < pagesToSend; i++) {
+    allPages.push(settings.currentPage + i);
+  }
 
-  await channel.send({
-    content: `${role ? `<@&${role.id}>` : ""} تم تعويض الصفحات.`,
-    embeds: [embed]
-  });
+  const groups = [];
+  while (allPages.length > 0) {
+    groups.push(allPages.splice(0, 4)); // كل 4 صفحات في مجموعة
+  }
 
+  // إرسال كل مجموعة
+  for (const group of groups) {
+    const files = [];
+
+    for (const p of group) {
+      const buffer = await getPageWithWhiteBackground(p);
+      if (buffer) {
+        files.push({
+          attachment: buffer,
+          name: `page_${p}.png`
+        });
+      }
+    }
+
+    const first = group[0];
+    const last = group[group.length - 1];
+
+    const embed = new EmbedBuilder()
+      .setColor(0x55A2FA)
+      .setTitle("Khatma of the Quran 🕋 |📖 ختمة القرآن الكريم")
+      .setDescription(
+        `🕌 **حان الآن موعد أذان ${getArabicPrayerName(nextPrayer)}** حسب التوقيت المحلي لمكة المكرمة\n\n` +
+        `📖 **تمّ قراءة صفحات (${first} - ${last}) من القرآن الكريم** ضمن ختمة رمضان المبارك.\n\n` +
+        `اللهم بلغنا ليلة القدر 🌙`
+      )
+      .setImage("https://i.imgur.com/ou7luSN.png")
+      .setTimestamp();
+
+    await channel.send({
+      content: role ? `<@&${role.id}>` : "",
+      embeds: [embed],
+      files
+    });
+  }
+
+  // تحديث الصفحة الحالية
   settings.currentPage += pagesToSend;
 
-  return interaction.editReply("تم التعويض بنجاح.");
+  return interaction.editReply("تم إرسال التعويضات بنجاح.");
 }
+
   }
   
 
