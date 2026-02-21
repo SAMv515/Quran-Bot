@@ -58,8 +58,9 @@
 # 2) تعديل ملف config.json
 
 
-- token =
-- clientId =
-- guildId =
+- token = التوكن الخاص بالبوت 
+- clientId = رقم الايدي الخاص بالبوت
+- guildId = ايدي السيرفر الي تبي تضع فيه البوت
+
 # 3) تشغيل البوت
 - node index.js
