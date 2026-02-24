@@ -40,7 +40,7 @@ const commands = [
         .setRequired(true)
     ),
 
-      new SlashCommandBuilder()
+  new SlashCommandBuilder()
     .setName("catchup-pages")
     .setDescription(" 🟡 ( 5 )  تعويض صفحات الأيام الماضية من الختمة"),
 
@@ -48,12 +48,10 @@ const commands = [
     .setName("setup-panel")
     .setDescription(" 🔵 ( 6 )  إنشاء لوحة التحكم الخاصة بختمة القرآن"),
 
-
   // 🟢 أوامر التشغيل اليومية
   new SlashCommandBuilder()
     .setName("current-page")
     .setDescription(" 🟣 ( 7 )  عرض الصفحة الحالية في الختمة"),
-
 
   new SlashCommandBuilder()
     .setName("test-quran-page")
@@ -69,7 +67,7 @@ const commands = [
         .setRequired(true)
     ),
 
-      // ⚪ أوامر التجربة (لا تدخل ضمن ترتيب التشغيل)
+  // ⚪ أوامر التجربة (لا تدخل ضمن ترتيب التشغيل)
   new SlashCommandBuilder()
     .setName("test-api")
     .setDescription("⚪ اختبار API أوقات الصلاة"),
@@ -85,6 +83,15 @@ const commands = [
   new SlashCommandBuilder()
     .setName("today-prayers")
     .setDescription("⚪ عرض أوقات الصلاة اليوم"),
+
+  // 🧪 أوامر الاختبار المؤقتة — احذفها بعد الانتهاء
+  new SlashCommandBuilder()
+    .setName("test-quran-now")
+    .setDescription("🧪 محاكاة إرسال صفحات القرآن كأنه وقت صلاة الآن"),
+
+  new SlashCommandBuilder()
+    .setName("test-adhan-dm")
+    .setDescription("🧪 اختبار تنبيهات الأذان عبر الرسائل الخاصة (DM)"),
 
 ].map(cmd => cmd.toJSON());
 
@@ -104,4 +111,3 @@ const rest = new REST({ version: "10" }).setToken(config.token);
     console.error(error);
   }
 })();
-

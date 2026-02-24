@@ -447,59 +447,8 @@ function buildCountdownEmbed(nextPrayer, remaining, guildIcon) {
 // متغير لتخزين رسالة العدّاد الحي
 let liveCountdownMessage = null;
 
-// 🟦 هنا تضيف الدالة
-function scheduleMakkahQuran() {
-  cron.schedule("* * * * *", async () => {
-    try {
-      // لو ما تم تعيين روم أصلاً
-      if (!config.makkahReminderChannelId) return;
+// 🟦 دالة scheduleMakkahQuran معرّفة في القسم 7 أدناه
 
-      const channel = client.channels.cache.get(config.makkahReminderChannelId);
-      if (!channel) {
-        // الروم محذوف → امسح الآيدي من config عشان ما يستمر يحاول
-        console.warn("Makkah reminder channel not found, clearing from config.");
-        delete config.makkahReminderChannelId;
-        fs.writeFileSync("./config.json", JSON.stringify(config, null, 2));
-        liveCountdownMessage = null;
-        return;
-      }
-
-      const times = await getMakkahPrayerTimes();
-      if (!times) return;
-
-      const now = new Date();
-      const h = now.getHours().toString().padStart(2, "0");
-      const m = now.getMinutes().toString().padStart(2, "0");
-      const current = `${h}:${m}`;
-
-      const nextPrayer = getNextPrayer(times, current);
-      const remaining = getRemainingTime(now, times[nextPrayer]);
-
-      // أول مرة: أرسل رسالة جديدة
-      if (!liveCountdownMessage) {
-        liveCountdownMessage = await safeSend(channel, {
-          embeds: [buildCountdownEmbed(nextPrayer, remaining, channel.guild.iconURL())]
-        }).catch((err) => {
-          console.error("Error sending live countdown:", err.message);
-          liveCountdownMessage = null;
-        });
-        return;
-      }
-
-      // تحديث الرسالة القديمة
-      await safeEdit(liveCountdownMessage, {
-        embeds: [buildCountdownEmbed(nextPrayer, remaining, channel.guild.iconURL())]
-      }).catch((err) => {
-        console.error("Error editing live countdown:", err.message);
-        // لو طلع Unknown Channel أو الرسالة اختفت → نرجع null
-        liveCountdownMessage = null;
-      });
-
-    } catch (err) {
-      console.error("scheduleMakkahQuran loop error:", err);
-    }
-  });
-}
 
 
 
@@ -511,19 +460,10 @@ function schedulePersonalAdhan() {
   cron.schedule("* * * * *", async () => {
     try {
       for (const [userId, settings] of userPrayerSettings.entries()) {
-        if (!settings || !settings.channelId) {
+        if (!settings || !settings.city || !settings.country) {
           userPrayerSettings.delete(userId);
           continue;
         }
-
-const channel = client.channels.cache.get(settings.channelId);
-
-if (!channel) {
-  userPrayerSettings.delete(userId);
-  continue;
-}
-
-  
 
         const times = await getPrayerTimesByCity(settings.city, settings.country);
         if (!times) continue;
@@ -533,13 +473,30 @@ if (!channel) {
         const m = now.getMinutes().toString().padStart(2, "0");
         const current = `${h}:${m}`;
 
+        // تنبيهات 10 و 5 دقائق قبل الأذان
+        for (const min of [10, 5]) {
+          const match = Object.entries(times).find(([_, t]) => subtractMinutes(t, min) === current);
+          if (match) {
+            const [prayer] = match;
+            try {
+              const user = await client.users.fetch(userId);
+              await user.send(`⏰ تبقى **${min} دقيقة** على أذان **${getArabicPrayerName(prayer)}** في مدينة **${settings.city}**`);
+            } catch (e) {
+              console.log(`لا يمكن إرسال DM للمستخدم ${userId}`);
+            }
+          }
+        }
+
+        // عند الأذان
         const match = Object.entries(times).find(([_, t]) => t === current);
         if (match) {
           const [prayer] = match;
-
-          await safeSend(channel, {
-            content: `🕌 حان الآن وقت **${getArabicPrayerName(prayer)}**`
-          });
+          try {
+            const user = await client.users.fetch(userId);
+            await user.send(`🕌 حان الآن وقت **${getArabicPrayerName(prayer)}** في مدينة **${settings.city}**`);
+          } catch (e) {
+            console.log(`لا يمكن إرسال DM للمستخدم ${userId}`);
+          }
         }
       }
     } catch (err) {
@@ -658,6 +615,117 @@ if (interaction.commandName === "current-page") {
     flags: 64
   });
 }
+
+
+// ============================================================
+// 🧪 أوامر الاختبار المؤقتة — احذفها بعد الانتهاء من الاختبار
+// ============================================================
+
+// /test-quran-now → يحاكي إرسال صفحات القرآن كأنه وقت صلاة الآن
+if (interaction.commandName === "test-quran-now") {
+  if (!hasPermission(interaction)) {
+    return interaction.reply({ content: "هذا الأمر للمالك أو الأدمن فقط.", flags: 64 });
+  }
+
+  await interaction.deferReply({ flags: 64 });
+
+  const settings = guildSettings.get(interaction.guild.id);
+  if (!settings) {
+    return interaction.editReply("❌ لم يتم تعيين روم الختمة. استخدم /set-quran-channel أولاً.");
+  }
+
+  const channel = interaction.guild.channels.cache.get(settings.quranChannelId);
+  if (!channel) {
+    return interaction.editReply("❌ الروم المحدد غير موجود.");
+  }
+
+  const quranRole = interaction.guild.roles.cache.get(config.quranRoleId);
+  const pages = [
+    settings.currentPage,
+    settings.currentPage + 1,
+    settings.currentPage + 2,
+    settings.currentPage + 3
+  ];
+
+  // إرسال الصفحات الأربع بدون منشن
+  for (const p of pages) {
+    const buffer = await getPageWithWhiteBackground(p);
+    if (!buffer) {
+      await channel.send({ content: `⚠️ صفحة ${p} غير موجودة في المجلد.` });
+      continue;
+    }
+    await safeSend(channel, {
+      files: [{ attachment: buffer, name: `quran.png` }]
+    });
+  }
+
+  // الإمبيد مع المنشن مرة واحدة
+  const testEmbed = new EmbedBuilder()
+    .setColor(0x55A2FA)
+    .setTitle("🧪 اختبار | Khatma of the Quran 🕋 | 📖 ختمة القرآن الكريم")
+    .setDescription(
+      `🕌 **[اختبار] هذه محاكاة لوقت الأذان**\n\n` +
+      `📖 **تمّ قراءة صفحات (${pages[0]} - ${pages[3]}) من القرآن الكريم** ضمن ختمة رمضان المبارك.\n\n` +
+      `اللهم بلغنا ليلة القدر 🌙`
+    )
+    .setImage("https://i.imgur.com/ou7luSN.png")
+    .setTimestamp();
+
+  await safeSend(channel, {
+    content: quranRole ? `<@&${quranRole.id}>` : "",
+    embeds: [testEmbed]
+  });
+
+  return interaction.editReply(
+    `✅ تم إرسال ${pages.length} صفحات (${pages[0]}–${pages[3]}) إلى ${channel} كاختبار.\n` +
+    `• المنشن ظهر مرة واحدة فقط مع الإمبيد ✅\n` +
+    `• إذا ظهرت الصفحات بشكل صحيح، التعديل يعمل! 🎉`
+  );
+}
+
+
+// /test-adhan-dm → يرسل DM تجريبي لك كأنه تنبيه أذان
+if (interaction.commandName === "test-adhan-dm") {
+  await interaction.deferReply({ flags: 64 });
+
+  const testMessages = [
+    `⏰ تبقى **10 دقائق** على أذان **صلاة العشاء** في مدينة **مكة** — [اختبار]`,
+    `⏰ تبقى **5 دقائق** على أذان **صلاة العشاء** في مدينة **مكة** — [اختبار]`,
+    `🕌 حان الآن وقت **صلاة العشاء** في مدينة **مكة** — [اختبار]`
+  ];
+
+  let sent = 0;
+  for (const msg of testMessages) {
+    try {
+      await interaction.user.send(msg);
+      sent++;
+      await new Promise(resolve => setTimeout(resolve, 500)); // فترة بسيطة بين الرسائل
+    } catch (e) {
+      // فشل إرسال DM
+    }
+  }
+
+  if (sent === 0) {
+    return interaction.editReply(
+      `❌ فشل إرسال الـ DM.\n` +
+      `**السبب:** أنت أغلقت الرسائل الخاصة من إعدادات Discord.\n\n` +
+      `**الحل:** اذهب إلى إعدادات Discord > الخصوصية والسلامة > فعّل "السماح بالرسائل من أعضاء السيرفر".`
+    );
+  }
+
+  return interaction.editReply(
+    `✅ تم إرسال ${sent} رسائل DM إليك كاختبار!\n` +
+    `افتح رسائلك الخاصة وستجد:\n` +
+    `• تنبيه قبل 10 دقائق ✅\n` +
+    `• تنبيه قبل 5 دقائق ✅\n` +
+    `• تنبيه عند الأذان ✅\n\n` +
+    `إذا وصلت، التعديل يعمل بشكل صحيح! 🎉`
+  );
+}
+
+// ============================================================
+// نهاية أوامر الاختبار
+// ============================================================
 
 
 //=======================
@@ -1024,7 +1092,7 @@ const deleteButton = new ActionRowBuilder().addComponents(
 
 // إرسال رسالة فيها الزر داخل الروم
 await safeSend(privateChannel, {
-  content: `🕌 تم إنشاء روم تذكير الأذان لمدينة **${city}**\nيمكنك حذف الروم من هنا:`,
+  content: `🕌 تم إعداد تذكير الأذان لمدينة **${city}**\n\n📩 ستصلك تنبيهات الأذان (قبل 10 دقائق، قبل 5 دقائق، وعند الأذان) عبر **الرسائل الخاصة** مباشرة.\n\nيمكنك حذف هذا الإعداد من الزر أدناه:`,
   components: [deleteButton]
 });
 
@@ -1303,7 +1371,7 @@ async function scheduleMakkahQuran() {
       const match = Object.entries(reminderTimes[min]).find(([_, t]) => t === current);
       if (match) {
         const [prayer] = match;
-        reminderChannel.send(
+        await safeSend(reminderChannel,
           `${adhanRole} ⏰ تبقى **${min} دقيقة** على أذان **${getArabicPrayerName(prayer)}**`
         );
       }
@@ -1316,7 +1384,7 @@ async function scheduleMakkahQuran() {
     if (nowAdhan) {
       const [prayer] = nowAdhan;
 
-      reminderChannel.send(
+      await safeSend(reminderChannel,
         `${adhanRole} 🕌
           حان الآن وقت **${getArabicPrayerName(prayer)}** بتوقيت مكة المكرمة`
       );
@@ -1378,18 +1446,17 @@ for (const [guildId, settings] of guildSettings.entries()) {
     settings.currentPage + 3
   ];
 
-  // إرسال الصفحات الأربع
+  // إرسال الصفحات الأربع (بدون منشن)
   for (const p of pages) {
     const buffer = await getPageWithWhiteBackground(p);
     if (!buffer) continue;
 
     await safeSend(channel, {
-      content: quranRole ? `<@&${quranRole.id}>` : "", // ← المنشن هنا
       files: [{ attachment: buffer, name: `quran.png` }]
     });
   }
 
-  // الإمبيد الاحترافي
+  // الإمبيد الاحترافي مع المنشن مرة واحدة فقط هنا
   const prayerEmbed = new EmbedBuilder()
     .setColor(0x55A2FA)
     .setTitle("Khatma of the Quran 🕋 | 📖 ختمة القرآن الكريم")
@@ -1402,7 +1469,7 @@ for (const [guildId, settings] of guildSettings.entries()) {
     .setTimestamp();
 
   await safeSend(channel, {
-    content: quranRole ? `<@&${quranRole.id}>` : "", // ← المنشن مع الإمبيد
+    content: quranRole ? `<@&${quranRole.id}>` : "", // ← المنشن مرة واحدة فقط مع الإمبيد
     embeds: [prayerEmbed]
   });
 
