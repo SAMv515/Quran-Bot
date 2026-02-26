@@ -280,6 +280,30 @@ async function getMakkahPrayerTimes() {
 
 //5.3 — معرفة اليوم من رمضان
 
+async function getHijriDateText() {
+  try {
+    const today = new Date();
+    const d = today.getDate();
+    const m = today.getMonth() + 1;
+    const y = today.getFullYear();
+
+    const url = `https://api.aladhan.com/v1/gToH?date=${d}-${m}-${y}`;
+    const res = await axios.get(url);
+
+    if (!res.data || !res.data.data) return null;
+
+    const hijri = res.data.data.hijri;
+    const day = parseInt(hijri.day, 10);
+    const monthAr = hijri.month.ar;
+
+    return `اليوم ${day} ${monthAr}`;
+  } catch (err) {
+    console.error("خطأ في جلب التاريخ الهجري:", err.message);
+    return null;
+  }
+}
+
+
 async function getRamadanDayIfAny() {
   try {
     const today = new Date();
@@ -647,33 +671,33 @@ if (interaction.commandName === "test-quran-now") {
     settings.currentPage + 3
   ];
 
-  // إرسال الصفحات الأربع بدون منشن
+  // 1) المنشن + النص أولاً
+  const hijriTest = await getHijriDateText();
+  await safeSend(channel, {
+    content:
+      (quranRole ? `<@&${quranRole.id}> ` : "") +
+      `🕌 **[اختبار] هذه محاكاة لوقت الأذان**\n\n` +
+      `📖 **تمّ قراءة صفحات (${pages[0]} - ${pages[3]}) من القرآن الكريم** ضمن ختمة رمضان المبارك.\n\n` +
+      (hijriTest ? `🌙 ${hijriTest}` : "")
+  });
+
+  // 2) الصفحات الأربع في رسالة واحدة جنب بعض
+  const pageFiles = [];
   for (const p of pages) {
     const buffer = await getPageWithWhiteBackground(p);
     if (!buffer) {
       await channel.send({ content: `⚠️ صفحة ${p} غير موجودة في المجلد.` });
       continue;
     }
-    await safeSend(channel, {
-      files: [{ attachment: buffer, name: `quran.png` }]
-    });
+    pageFiles.push({ attachment: buffer, name: `page_${p}.png` });
+  }
+  if (pageFiles.length > 0) {
+    await safeSend(channel, { files: pageFiles });
   }
 
-  // الإمبيد مع المنشن مرة واحدة
-  const testEmbed = new EmbedBuilder()
-    .setColor(0x55A2FA)
-    .setTitle("🧪 اختبار | Khatma of the Quran 🕋 | 📖 ختمة القرآن الكريم")
-    .setDescription(
-      `🕌 **[اختبار] هذه محاكاة لوقت الأذان**\n\n` +
-      `📖 **تمّ قراءة صفحات (${pages[0]} - ${pages[3]}) من القرآن الكريم** ضمن ختمة رمضان المبارك.\n\n` +
-      `اللهم بلغنا ليلة القدر 🌙`
-    )
-    .setImage("https://i.imgur.com/ou7luSN.png")
-    .setTimestamp();
-
+  // 3) الصورة فاصل في الآخر
   await safeSend(channel, {
-    content: quranRole ? `<@&${quranRole.id}>` : "",
-    embeds: [testEmbed]
+    files: [{ attachment: "https://i.imgur.com/ou7luSN.png", name: "separator.png" }]
   });
 
   return interaction.editReply(
@@ -951,37 +975,33 @@ if (interaction.commandName === "catchup-pages") {
   }
 
   // إرسال كل مجموعة
+  const hijriCatchup = await getHijriDateText();
   for (const group of groups) {
-    const files = [];
-
-    for (const p of group) {
-      const buffer = await getPageWithWhiteBackground(p);
-      if (buffer) {
-        files.push({
-          attachment: buffer,
-          name: `page_${p}.png`
-        });
-      }
-    }
-
     const first = group[0];
     const last = group[group.length - 1];
 
-    const embed = new EmbedBuilder()
-      .setColor(0x55A2FA)
-      .setTitle("Khatma of the Quran 🕋 |📖 ختمة القرآن الكريم")
-      .setDescription(
+    // 1) المنشن + النص أولاً
+    await safeSend(channel, {
+      content:
+        (role ? `<@&${role.id}> ` : "") +
         `🕌 **حان الآن موعد أذان ${getArabicPrayerName(nextPrayer)}** حسب التوقيت المحلي لمكة المكرمة\n\n` +
         `📖 **تمّ قراءة صفحات (${first} - ${last}) من القرآن الكريم** ضمن ختمة رمضان المبارك.\n\n` +
-        `اللهم بلغنا ليلة القدر 🌙`
-      )
-      .setImage("https://i.imgur.com/ou7luSN.png")
-      .setTimestamp();
+        (hijriCatchup ? `🌙 ${hijriCatchup}` : "")
+    });
 
-    await channel.send({
-      content: role ? `<@&${role.id}>` : "",
-      embeds: [embed],
-      files
+    // 2) الصفحات الأربع في رسالة واحدة جنب بعض
+    const files = [];
+    for (const p of group) {
+      const buffer = await getPageWithWhiteBackground(p);
+      if (buffer) files.push({ attachment: buffer, name: `page_${p}.png` });
+    }
+    if (files.length > 0) {
+      await safeSend(channel, { files });
+    }
+
+    // 3) الصورة فاصل في الآخر
+    await safeSend(channel, {
+      files: [{ attachment: "https://i.imgur.com/ou7luSN.png", name: "separator.png" }]
     });
   }
 
@@ -1446,31 +1466,29 @@ for (const [guildId, settings] of guildSettings.entries()) {
     settings.currentPage + 3
   ];
 
-  // إرسال الصفحات الأربع (بدون منشن)
-  for (const p of pages) {
-    const buffer = await getPageWithWhiteBackground(p);
-    if (!buffer) continue;
-
-    await safeSend(channel, {
-      files: [{ attachment: buffer, name: `quran.png` }]
-    });
-  }
-
-  // الإمبيد الاحترافي مع المنشن مرة واحدة فقط هنا
-  const prayerEmbed = new EmbedBuilder()
-    .setColor(0x55A2FA)
-    .setTitle("Khatma of the Quran 🕋 | 📖 ختمة القرآن الكريم")
-    .setDescription(
+  // 1) المنشن + النص أولاً
+  const hijriDate = await getHijriDateText();
+  await safeSend(channel, {
+    content:
+      (quranRole ? `<@&${quranRole.id}> ` : "") +
       `🕌 **حان الآن موعد أذان ${prayerName}** حسب التوقيت المحلي لمكة المكرمة\n\n` +
       `📖 **تمّ قراءة صفحات (${pages[0]} - ${pages[3]}) من القرآن الكريم** ضمن ختمة رمضان المبارك.\n\n` +
-      `اللهم بلغنا ليلة القدر 🌙`
-    )
-    .setImage("https://i.imgur.com/ou7luSN.png")
-    .setTimestamp();
+      (hijriDate ? `🌙 ${hijriDate}` : "")
+  });
 
+  // 2) الصفحات الأربع في رسالة واحدة جنب بعض
+  const pageFiles = [];
+  for (const p of pages) {
+    const buffer = await getPageWithWhiteBackground(p);
+    if (buffer) pageFiles.push({ attachment: buffer, name: `page_${p}.png` });
+  }
+  if (pageFiles.length > 0) {
+    await safeSend(channel, { files: pageFiles });
+  }
+
+  // 3) الصورة فاصل في الآخر
   await safeSend(channel, {
-    content: quranRole ? `<@&${quranRole.id}>` : "", // ← المنشن مرة واحدة فقط مع الإمبيد
-    embeds: [prayerEmbed]
+    files: [{ attachment: "https://i.imgur.com/ou7luSN.png", name: "separator.png" }]
   });
 
   // تحديث الصفحة
